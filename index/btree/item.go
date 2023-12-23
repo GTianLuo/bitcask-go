@@ -8,7 +8,7 @@ import (
 
 type Item struct {
 	Key []byte
-	Pos *data.LogRecord
+	Pos *data.LogRecordPos
 }
 
 func (i Item) Less(than btree.Item) bool {

@@ -3,7 +3,7 @@ package index
 import "bitcask-go/data"
 
 type Indexer interface {
-	Put(key []byte, pos *data.LogRecord) bool
-	Get(key []byte) *data.LogRecord
+	Put(key []byte, pos *data.LogRecordPos) bool
+	Get(key []byte) *data.LogRecordPos
 	Delete(key []byte) bool
 }

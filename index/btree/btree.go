@@ -11,7 +11,14 @@ type Btree struct {
 	lock *sync.RWMutex
 }
 
-func (b *Btree) Put(key []byte, pos *data.LogRecord) bool {
+func NewBTree() *Btree {
+	return &Btree{
+		tree: btree.New(32),
+		lock: new(sync.RWMutex),
+	}
+}
+
+func (b *Btree) Put(key []byte, pos *data.LogRecordPos) bool {
 	it := &Item{
 		Key: key,
 		Pos: pos,
@@ -22,7 +29,7 @@ func (b *Btree) Put(key []byte, pos *data.LogRecord) bool {
 	return true
 }
 
-func (b *Btree) Get(key []byte) *data.LogRecord {
+func (b *Btree) Get(key []byte) *data.LogRecordPos {
 	b.lock.RLock()
 	defer b.lock.RUnlock()
 	it := &Item{Key: key}

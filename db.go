@@ -4,6 +4,12 @@ import (
 	"bitcask-go/data"
 	"bitcask-go/index"
 	"bitcask-go/utils"
+	"io"
+	"io/ioutil"
+	"os"
+	"sort"
+	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -14,6 +20,41 @@ type DB struct {
 	oldDataFiles     map[uint32]*data.DataFile // 旧的数据文件，只读
 	options          *Options                  // 用户配置选项
 	index            index.Indexer             // 内存索引
+	fids             []int                     // 保存db数据文件序号的数组，有序
+}
+
+func Start(options *Options) (*DB, error) {
+	// 校验配置项
+	if err := checkOptions(options); err != nil {
+		return nil, err
+	}
+
+	// 校验数据目录是否存在，不存在则创建
+	if _, err := os.Stat(options.DBFileDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(options.DBFileDir, os.ModeDir); err != nil {
+			return nil, err
+		}
+	}
+
+	// 创建db
+	db := &DB{
+		oldDataFiles: make(map[uint32]*data.DataFile),
+		options:      options,
+		mu:           new(sync.RWMutex),
+		index:        index.NewIndexer(options.DBIndex),
+	}
+
+	// 加载数据文件
+	if err := db.loadDataFiles(); err != nil {
+		return nil, err
+	}
+
+	// 加载内存索引
+	if err := db.loadIndexFromDataFiles(); err != nil {
+		return nil, err
+	}
+
+	return db, nil
 }
 
 // Put 写入数据
@@ -76,7 +117,7 @@ func (db *DB) appendLogRecord(logRecord *data.LogRecord) (*data.LogRecordPos, er
 	}
 
 	// 写入数据
-	if err := db.activityDataFile.Write(encodeLogRecord); err != nil {
+	if err := db.activityDataFile.WriteLogRecord(encodeLogRecord); err != nil {
 		return nil, err
 	}
 
@@ -147,7 +188,7 @@ func (db *DB) read(pos *data.LogRecordPos) (*data.LogRecord, error) {
 		return nil, ErrDataFileNotFound
 	}
 
-	logRecord, err := belongFile.Read(pos.Offset)
+	logRecord, _, err := belongFile.ReadLogRecord(pos.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -160,3 +201,100 @@ func (db *DB) read(pos *data.LogRecordPos) (*data.LogRecord, error) {
 	return logRecord, nil
 }
 
+//  校验配置项
+func checkOptions(options *Options) error {
+
+	if options.DBFileDir == "" {
+		return ErrDBDirEmpty
+	}
+
+	if options.FileMaxSize <= 0 {
+		return ErrDBFileMaxSize
+	}
+	return nil
+}
+
+// 加载数据文件
+func (db *DB) loadDataFiles() error {
+	fileInfos, err := ioutil.ReadDir(db.options.DBFileDir)
+	if err != nil {
+		return err
+	}
+
+	// 遍历所有文件，获取DB数据文件的编号
+	fids := make([]int, 0)
+	for _, fileInfo := range fileInfos {
+		fileName := fileInfo.Name()
+		if strings.HasSuffix(fileName, data.DataFileSubffix) {
+			fid, err := strconv.Atoi(strings.Split(fileName, ".")[0])
+			// 文件损坏
+			if err != nil {
+				return ErrDataFileDamaged
+			}
+			fids = append(fids, fid)
+		}
+	}
+
+	//对文件序号排序
+	sort.Ints(fids)
+
+	db.fids = fids
+	// 打开所有DB数据文件
+	for i, fid := range fids {
+		dataFile, err := data.OpenDataFile(db.options.DBFileDir, uint32(fid))
+		if err != nil {
+			return err
+		}
+		if i == len(fids)-1 { // 序号最大的文件，为活跃文件
+			db.activityDataFile = dataFile
+		} else {
+			db.oldDataFiles[uint32(fid)] = dataFile
+		}
+	}
+	return nil
+}
+
+// 从数据文件中加载内存索引
+func (db *DB) loadIndexFromDataFiles() error {
+
+	for i, fid := range db.fids {
+		var dataFile *data.DataFile
+		if i != len(db.fids) { // 当前是旧数据文件
+			dataFile = db.oldDataFiles[uint32(fid)]
+		} else {
+			dataFile = db.activityDataFile
+		}
+
+		var offset uint64 = 0
+		for {
+			logRecord, size, err := dataFile.ReadLogRecord(offset)
+			if err != nil {
+				// 读到文件末尾了
+				if err == io.EOF {
+					break
+				}
+				return err
+			}
+
+			logRecordPos := &data.LogRecordPos{
+				Fid:    uint32(fid),
+				Offset: offset,
+			}
+
+			// 更新内存索引
+			if logRecord.Type == data.LogRecordNormal {
+				db.index.Put(logRecord.Key, logRecordPos)
+			} else if logRecord.Type == data.LogRecordDelete {
+				db.index.Delete(logRecord.Key)
+			}
+
+			// 更新偏移量
+			offset += uint64(size)
+		}
+		// 如果当前是活跃文件，更新写入偏移量
+		if fid == len(db.fids)-1 {
+			dataFile.WriteOff = offset
+		}
+	}
+	return nil
+}

@@ -2,6 +2,8 @@ package data
 
 import "bitcask-go/fio"
 
+const DataFileSubffix = ".data"
+
 // DataFile 数据日志文件实例
 type DataFile struct {
 	FileId    uint32        // 文件编号
@@ -14,7 +16,7 @@ func OpenDataFile(dirPath string, fid uint32) (*DataFile, error) {
 }
 
 // WriteDataFile 往文件中写入数据
-func (file *DataFile) Write(data []byte) error {
+func (file *DataFile) WriteLogRecord(data []byte) error {
 	return nil
 }
 
@@ -23,6 +25,6 @@ func (file *DataFile) Sync() error {
 	return nil
 }
 
-func (file *DataFile) Read(offset uint64) (*LogRecord, error) {
-	return nil, nil
+func (file *DataFile) ReadLogRecord(offset uint64) (*LogRecord, uint32, error) {
+	return nil, 0, nil
 }

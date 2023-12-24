@@ -298,3 +298,33 @@ func (db *DB) loadIndexFromDataFiles() error {
 	}
 	return nil
 }
+
+// Delete 删除key-value
+func (db *DB) Delete(key []byte) error {
+
+	// 判断key是否有效
+	if !utils.IsValidKey(key) {
+		return ErrKeyIsNilOrEmpty
+	}
+	// 在内存索引中查询数据位置
+	lrPos := db.index.Get(key)
+	if lrPos == nil {
+		return ErrReadKeyNotFound
+	}
+	// 构建删除后的数据
+	logRecord := &data.LogRecord{
+		Key:  key,
+		Type: data.LogRecordDelete,
+	}
+	// 在数据文件中追加该删除记录
+	_, err := db.appendLogRecord(logRecord)
+	if err != nil {
+		return err
+	}
+
+	// 删除内存索引
+	if ok := db.index.Delete(key); !ok {
+		return ErrIndexUpdateFailed
+	}
+	return nil
+}

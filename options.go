@@ -14,3 +14,10 @@ type Options struct {
 	DBSync      DBSyncType        // 刷盘策略
 	DBIndex     index.DBIndexType // 索引类型
 }
+
+var DefaultOptions = &Options{
+	DBFileDir:   "/tmp/bitcask-db",
+	FileMaxSize: 1024 * 1024 * 1024 * 2, // 2GB
+	DBSync:      Always,
+	DBIndex:     index.BTree,
+}

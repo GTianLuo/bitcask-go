@@ -9,4 +9,10 @@ type IOManager interface {
 	// Sync 同步数据到磁盘
 	Sync() error
 	Close() error
+	Size() (int64, error)
+}
+
+// NewIOManager 创建IO管理对象，目前只支持fileio
+func NewIOManager(fileName string) (IOManager, error) {
+	return NewFileIOManager(fileName)
 }

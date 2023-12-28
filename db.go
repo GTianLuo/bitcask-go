@@ -65,6 +65,8 @@ func (db *DB) Put(key []byte, value []byte) error {
 		return ErrKeyIsNilOrEmpty
 	}
 
+	// 这里不需要判断key是否存在,如果put已存在的key,相当于更新数据
+
 	logRecord := &data.LogRecord{
 		Key:   key,
 		Value: value,
@@ -96,11 +98,11 @@ func (db *DB) appendLogRecord(logRecord *data.LogRecord) (*data.LogRecordPos, er
 		}
 	}
 
-	// 对LogRecord编码
-	encodeLogRecord, size := logRecord.LogRecordEncode()
+	// 获取LogRecord编码后的长度
+	size := db.activityDataFile.EncodeLogRecordSize(logRecord)
 
 	// 判断当前活跃文件是否达到阈值,达到阈值需要打开新的活跃文件
-	if db.activityDataFile.WriteOff+size >= db.options.FileMaxSize {
+	if db.activityDataFile.WriteOff+uint64(size) >= db.options.FileMaxSize {
 
 		// 持久化数据文件
 		if err := db.activityDataFile.Sync(); err != nil {
@@ -117,7 +119,7 @@ func (db *DB) appendLogRecord(logRecord *data.LogRecord) (*data.LogRecordPos, er
 	}
 
 	// 写入数据
-	if err := db.activityDataFile.WriteLogRecord(encodeLogRecord); err != nil {
+	if _, err := db.activityDataFile.WriteLogRecord(logRecord); err != nil {
 		return nil, err
 	}
 
@@ -130,7 +132,7 @@ func (db *DB) appendLogRecord(logRecord *data.LogRecord) (*data.LogRecordPos, er
 
 	return &data.LogRecordPos{
 		db.activityDataFile.FileId,
-		db.activityDataFile.WriteOff,
+		db.activityDataFile.WriteOff - uint64(size),
 	}, nil
 
 }
@@ -139,8 +141,8 @@ func (db *DB) appendLogRecord(logRecord *data.LogRecord) (*data.LogRecordPos, er
 // 该方法必须在加锁的条件下调用
 func (db *DB) setActivityDataFile() error {
 
-	var initailFid uint32 = 0
-	if db.activityDataFile == nil {
+	var initailFid uint32 = 1
+	if db.activityDataFile != nil {
 		initailFid = db.activityDataFile.FileId + 1
 	}
 	dataFile, err := data.OpenDataFile(db.options.DBFileDir, initailFid)
@@ -151,8 +153,8 @@ func (db *DB) setActivityDataFile() error {
 	return nil
 }
 
-// Read 读数据
-func (db *DB) Read(key []byte) ([]byte, error) {
+// Get 读数据
+func (db *DB) Get(key []byte) ([]byte, error) {
 
 	// 判断key是否合法
 	if !utils.IsValidKey(key) {
@@ -188,7 +190,7 @@ func (db *DB) read(pos *data.LogRecordPos) (*data.LogRecord, error) {
 		return nil, ErrDataFileNotFound
 	}
 
-	logRecord, _, err := belongFile.ReadLogRecord(pos.Offset)
+	logRecord, _, err := belongFile.ReadLogRecord(int64(pos.Offset))
 	if err != nil {
 		return nil, err
 	}
@@ -259,7 +261,7 @@ func (db *DB) loadIndexFromDataFiles() error {
 
 	for i, fid := range db.fids {
 		var dataFile *data.DataFile
-		if i != len(db.fids) { // 当前是旧数据文件
+		if i != len(db.fids)-1 { // 当前是旧数据文件
 			dataFile = db.oldDataFiles[uint32(fid)]
 		} else {
 			dataFile = db.activityDataFile
@@ -267,7 +269,7 @@ func (db *DB) loadIndexFromDataFiles() error {
 
 		var offset uint64 = 0
 		for {
-			logRecord, size, err := dataFile.ReadLogRecord(offset)
+			logRecord, size, err := dataFile.ReadLogRecord(int64(offset))
 			if err != nil {
 				// 读到文件末尾了
 				if err == io.EOF {
@@ -292,7 +294,7 @@ func (db *DB) loadIndexFromDataFiles() error {
 			offset += uint64(size)
 		}
 		// 如果当前是活跃文件，更新写入偏移量
-		if fid == len(db.fids)-1 {
+		if fid == len(db.fids) {
 			dataFile.WriteOff = offset
 		}
 	}

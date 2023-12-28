@@ -1,4 +1,4 @@
-package btree
+package index
 
 import (
 	"bitcask-go/data"
@@ -37,7 +37,7 @@ func (b *Btree) Get(key []byte) *data.LogRecordPos {
 	if btreeItem == nil {
 		return nil
 	}
-	return btreeItem.(Item).Pos
+	return btreeItem.(*Item).Pos
 }
 
 func (b *Btree) Delete(key []byte) bool {
@@ -50,4 +50,12 @@ func (b *Btree) Delete(key []byte) bool {
 		return false
 	}
 	return true
+}
+
+// IsExist 判断key是否已经存在
+func (b *Btree) IsExist(key []byte) bool {
+	b.lock.RLock()
+	defer b.lock.RUnlock()
+	it := &Item{Key: key}
+	return b.tree.Has(it)
 }

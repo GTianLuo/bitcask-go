@@ -21,8 +21,3 @@ type LogRecord struct {
 	Value []byte
 	Type  LogRecordType
 }
-
-// LogRecordEncode 对日志文件进行编码，返回字节数组和长度
-func (logRecord *LogRecord) LogRecordEncode() ([]byte, uint64) {
-	return nil, 0
-}

@@ -150,3 +150,7 @@ func (b *BinaryCodec) checkLogRecordCRC(header []byte, lr *LogRecord, crc uint32
 func (b *BinaryCodec) Sync() error {
 	return b.ioManager.Sync()
 }
+
+func (b *BinaryCodec) Close() error {
+	return b.ioManager.Close()
+}

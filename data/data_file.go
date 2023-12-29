@@ -56,3 +56,7 @@ func (file *DataFile) Sync() error {
 func (file *DataFile) ReadLogRecord(offset int64) (*LogRecord, int, error) {
 	return file.codec.DecodeLogRecord(offset)
 }
+
+func (file *DataFile) Close() error {
+	return file.codec.Close()
+}

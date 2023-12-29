@@ -59,3 +59,78 @@ func (b *Btree) IsExist(key []byte) bool {
 	it := &Item{Key: key}
 	return b.tree.Has(it)
 }
+
+func (b *Btree) Iterator(reverse bool) Iterator {
+	if b == nil {
+		return nil
+	}
+	b.lock.RLock()
+	defer b.lock.RUnlock()
+	return newBTreeIterator(b.tree, reverse)
+}
+
+type BTreeIterator struct {
+	reverse bool    // 是否反向遍历
+	index   int     // 当前遍历到的位置
+	items   []*Item // 有序结果集
+}
+
+func newBTreeIterator(tree *btree.BTree, reverse bool) *BTreeIterator {
+
+	iterator := &BTreeIterator{
+		reverse: reverse,
+		index:   0,
+		items:   make([]*Item, 0),
+	}
+	saveValue := func(item btree.Item) bool {
+		iterator.items = append(iterator.items, item.(*Item))
+		return true
+	}
+
+	if !reverse {
+		tree.Ascend(saveValue)
+	} else {
+		tree.Descend(saveValue)
+	}
+	return iterator
+}
+
+func (it *BTreeIterator) Rewind() {
+	it.index = 0
+}
+
+func (it *BTreeIterator) Seek(key []byte) {
+	if !it.reverse {
+		for i, item := range it.items {
+			if !item.Less(&Item{Key: key}) {
+				it.index = i
+			}
+		}
+	} else {
+		for i, item := range it.items {
+			if item.Less(&Item{Key: key}) {
+				it.index = i
+			}
+		}
+	}
+}
+
+func (it *BTreeIterator) Next() {
+	it.index++
+}
+
+func (it *BTreeIterator) Valid() bool {
+	return it.index < len(it.items)
+}
+
+func (it *BTreeIterator) Key() []byte {
+	return it.items[it.index].Key
+}
+
+func (it *BTreeIterator) Value() *data.LogRecordPos {
+	return it.items[it.index].Pos
+}
+
+func (it *BTreeIterator) Close() {
+	it.items = nil
+}

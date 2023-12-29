@@ -166,7 +166,7 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 		return nil, ErrReadKeyNotFound
 	}
 	// 文件中查询
-	logRecord, err := db.read(logRecordPos)
+	logRecord, err := db.getLogRecordByPosition(logRecordPos)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +175,7 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 
 // 根据文件索引读数据
 // 该方法类会对db加锁
-func (db *DB) read(pos *data.LogRecordPos) (*data.LogRecord, error) {
+func (db *DB) getLogRecordByPosition(pos *data.LogRecordPos) (*data.LogRecord, error) {
 
 	db.mu.RLock()
 	db.mu.RUnlock()
@@ -201,6 +201,14 @@ func (db *DB) read(pos *data.LogRecordPos) (*data.LogRecord, error) {
 	}
 
 	return logRecord, nil
+}
+
+func (db *DB) getValueByPosition(pos *data.LogRecordPos) ([]byte, error) {
+	logRecord, err := db.getLogRecordByPosition(pos)
+	if err != nil {
+		return nil, err
+	}
+	return logRecord.Value, nil
 }
 
 //  校验配置项
@@ -311,7 +319,7 @@ func (db *DB) Delete(key []byte) error {
 	// 在内存索引中查询数据位置
 	lrPos := db.index.Get(key)
 	if lrPos == nil {
-		return ErrReadKeyNotFound
+		return nil
 	}
 	// 构建删除后的数据
 	logRecord := &data.LogRecord{
@@ -327,6 +335,64 @@ func (db *DB) Delete(key []byte) error {
 	// 删除内存索引
 	if ok := db.index.Delete(key); !ok {
 		return ErrIndexUpdateFailed
+	}
+	return nil
+}
+
+func (db *DB) Close() error {
+
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	// 刷新活跃文件
+	if db.activityDataFile != nil {
+		if err := db.activityDataFile.Sync(); err != nil {
+			return err
+		}
+	}
+	// 关闭所有文件
+	if err := db.activityDataFile.Close(); err != nil {
+		return err
+	}
+	for _, file := range db.oldDataFiles {
+		if err := file.Close(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Fold 遍历所有数据，并执行用户指定的操作fn，fn返回错误时终止
+func (db *DB) Fold(fn func(key []byte, value []byte) bool) error {
+	it := db.index.Iterator(false)
+	defer it.Close()
+	for it.Rewind(); it.Valid(); it.Next() {
+		// 该方法加锁了，这里不用加
+		value, err := db.getValueByPosition(it.Value())
+		if err != nil {
+			return err
+		}
+		if !fn(it.Key(), value) {
+			break
+		}
+	}
+	return nil
+}
+
+// ListKeys 获取所有的key
+func (db *DB) ListKeys() (rnt [][]byte) {
+	it := db.index.Iterator(false)
+	for it.Rewind(); it.Valid(); it.Next() {
+		rnt = append(rnt, it.Key())
+	}
+	return
+}
+
+// Sync 将内存数据刷入磁盘
+func (db *DB) Sync() error {
+	db.mu.Lock()
+	db.mu.Unlock()
+	if db.activityDataFile != nil {
+		return db.activityDataFile.Sync()
 	}
 	return nil
 }

@@ -15,6 +15,7 @@ type Indexer interface {
 	Get(key []byte) *data.LogRecordPos
 	Delete(key []byte) bool
 	IsExist(key []byte) bool
+	Iterator(reverse bool) Iterator
 }
 
 // NewIndexer 工厂方法，根据类型，创建对应的内存索引

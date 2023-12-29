@@ -12,6 +12,8 @@ type LogRecordCodec interface {
 	DecodeLogRecord(offset int64) (*LogRecord, int, error)
 	// Sync 刷盘
 	Sync() error
+	// Close 关闭流
+	Close() error
 }
 
 func NewLogRecordCodec(io fio.IOManager) LogRecordCodec {

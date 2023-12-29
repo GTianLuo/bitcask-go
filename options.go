@@ -17,7 +17,7 @@ type Options struct {
 
 var DefaultOptions = &Options{
 	DBFileDir:   "/tmp/bitcask-db",
-	FileMaxSize: 1024 * 1024 * 1024 * 2, // 2GB
+	FileMaxSize: 256 * 1024 * 1024, //256MB
 	DBSync:      Always,
 	DBIndex:     index.BTree,
 }
